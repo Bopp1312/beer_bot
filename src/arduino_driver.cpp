@@ -1,35 +1,42 @@
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
-#include <serial/serial.h>  // Include the serial library
+#include <iostream>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
 
-class SerialTwistNode : public rclcpp::Node {
+class ArduinoDriverNode : public rclcpp::Node {
 public:
-  SerialTwistNode() : Node("serial_twist_node") {
+  ArduinoDriverNode() : Node("arduino_driver_node") {
+
     // Create a subscription to the /cmd_vel topic
     subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
-        "/cmd_vel", 10, std::bind(&SerialTwistNode::twist_callback, this, std::placeholders::_1));
+        "/cmd_vel", 10, std::bind(&ArduinoDriverNode::twist_callback, this, std::placeholders::_1));
 
     // Initialize the serial connection
-    try {
-      serial_port_.setPort("/dev/ttyUSB0"); // Replace with your serial port
-      serial_port_.setBaudrate(38400);     // Replace with your motor controller baud rate
-      serial::Timeout timeout = serial::Timeout::simpleTimeout(1000);
-      serial_port_.setTimeout(timeout);
-      serial_port_.open();
-    } catch (const serial::IOException &e) {
-      RCLCPP_ERROR(this->get_logger(), "Unable to open serial port: %s", e.what());
+   int serial_port = open("/dev/ttyUSB0", O_RDWR);
+
+    if (serial_port < 0) {
+        std::cerr << "Error opening serial port\n";
     }
 
-    if (serial_port_.isOpen()) {
-      RCLCPP_INFO(this->get_logger(), "Serial port initialized.");
-    } else {
-      RCLCPP_ERROR(this->get_logger(), "Serial port not open.");
+    struct termios tty;
+    if (tcgetattr(serial_port, &tty) != 0) {
+        std::cerr << "Error getting terminal attributes\n";
     }
+
+    tty.c_cflag = B9600 | CS8 | CLOCAL | CREAD;
+    tty.c_iflag = IGNPAR;
+    tty.c_oflag = 0;
+    tty.c_lflag = 0;
+
+    tcflush(serial_port, TCIFLUSH);
+    tcsetattr(serial_port, TCSANOW, &tty);
   }
 
 private:
   void twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg) {
-    if (!serial_port_.isOpen()) {
+    if (serial_port <= 0) {
       RCLCPP_ERROR(this->get_logger(), "Serial port is not open!");
       return;
     }
@@ -51,12 +58,10 @@ private:
     std::string command = construct_motor_command(left_motor_speed, right_motor_speed);
 
     // Send the command over the serial port
-    try {
-      serial_port_.write(command);
-      RCLCPP_INFO(this->get_logger(), "Sent command: %s", command.c_str());
-    } catch (const serial::SerialException &e) {
-      RCLCPP_ERROR(this->get_logger(), "Error writing to serial port: %s", e.what());
-    }
+  
+    write(serial_port, command.c_str(), command.size());
+    RCLCPP_INFO(this->get_logger(), "Sent command: %s", command.c_str());
+
   }
 
   std::string construct_motor_command(int32_t left_speed, int32_t right_speed) {
@@ -65,12 +70,12 @@ private:
   }
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr subscription_;
-  serial::Serial serial_port_;
+  int serial_port;
 };
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SerialTwistNode>());
+  rclcpp::spin(std::make_shared<ArduinoDriverNode>());
   rclcpp::shutdown();
   return 0;
 }
