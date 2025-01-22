@@ -87,6 +87,57 @@ private:
     write(serial_port, command.c_str(), command.size());
     RCLCPP_INFO(this->get_logger(), "Sent command: %s", command.c_str());
 
+    read_serial();
+
+  }
+
+  void read_serial()
+  {
+      char buffer[256];
+      ssize_t bytes_read;
+      bytes_read = read(serial_port, buffer ,sizeof(buffer) -1);
+      if(bytes_read > 0)
+      {
+        buffer[bytes_read] = '\0'; 
+        // Find the ',' and break up the bytes into two integers
+        int comma_index = find_index(',', buffer, bytes_read);
+        if(comma_index < 0)
+        {
+          return; // skip there is no comma
+        }
+        char encoder_left_buffer[comma_index + 1];
+        char encoder_right_buffer[bytes_read - comma_index];
+
+        std::copy(buffer, buffer+comma_index, encoder_left_buffer);
+        encoder_left_buffer[comma_index] = '\0';
+
+        std::copy(buffer+comma_index + 1, buffer + bytes_read, encoder_right_buffer);
+        encoder_right_buffer[bytes_read - comma_index] = '\0';
+
+        int encoder_left = std::stoi(encoder_left_buffer);
+        int encoder_right = std::stoi(encoder_right_buffer);
+       
+        std::cout<<"Encoder Left: "<< encoder_left_buffer << " \nEncoder Right: "<< encoder_right_buffer<< std::endl;
+        std::cout<<"Full Message: "<< buffer<< std::endl;
+
+      }
+      else if(bytes_read == 0)
+      {
+        // No bytes 
+      } 
+  }
+
+  int find_index(const char character,char* array, size_t size)
+  {
+    for(size_t i = 0; i < size; i++)
+    {
+      if(array[i] == character)
+      {
+        return i;
+      }
+    }
+    return -1;
+
   }
 
   std::string construct_motor_command(int32_t left_speed, int32_t right_speed) 
