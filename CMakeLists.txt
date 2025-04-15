@@ -8,13 +8,16 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 add_executable(arduino_driver src/arduino_driver.cpp)
 add_executable(joy_to_twist src/joy_to_twist_node.cpp)
 
-ament_target_dependencies(arduino_driver rclcpp geometry_msgs)
+ament_target_dependencies(arduino_driver rclcpp geometry_msgs tf2_ros nav_msgs)
 ament_target_dependencies(joy_to_twist rclcpp geometry_msgs sensor_msgs)
 
 install(TARGETS 
