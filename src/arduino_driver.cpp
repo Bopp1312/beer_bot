@@ -31,9 +31,9 @@ struct Encoder
 {
   int32_t left = 0;
   int32_t right = 0;
-  
+
   Encoder operator-(const Encoder &other) const
-  { 
+  {
     Encoder result;
     result.left = left - other.left;
     result.right = right - other.right;
@@ -49,8 +49,6 @@ struct Encoder
   }
 };
 
-
-
 class ArduinoDriverNode : public rclcpp::Node
 {
 public:
@@ -59,7 +57,7 @@ public:
     // Create a subscription to the /cmd_vel topic
     subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10, std::bind(&ArduinoDriverNode::twist_callback, this, std::placeholders::_1));
-    odom_publisher = this->create_publisher<nav_msgs::msg::Odometry>("/odom",10);
+    odom_publisher = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
     timer_ = this->create_wall_timer(
         std::chrono::milliseconds(cycle_period_ms), std::bind(&ArduinoDriverNode::send_serial, this));
 
@@ -141,7 +139,7 @@ private:
 
     // Send the command over the serial port
     write(serial_port, command.c_str(), command.size());
-    RCLCPP_INFO(this->get_logger(), "Sent command: %s", command.c_str());
+    // RCLCPP_INFO(this->get_logger(), "Sent command: %s", command.c_str());
 
     read_serial();
   }
@@ -151,8 +149,8 @@ private:
     Robot_Velocity vel;
     int32_t angular = -(left_motor + right_motor);
     int32_t linear_qp = (left_motor - right_motor) / 2.0;
-    vel.omega = angular/(wheel_base/2.0)*qpp_per_meter*2*M_PI; // radians per second
-    vel.linear = linear_qp*qpp_per_meter*2*14; // meters per second
+    vel.omega = angular / (wheel_base / 2.0) * qpp_per_meter * 2 * M_PI; // radians per second
+    vel.linear = linear_qp * qpp_per_meter * 2 * 14;                     // meters per second
     return vel;
   }
 
@@ -164,7 +162,7 @@ private:
     {
       return; // Skip if the time difference is not positive
     }
-    if(init == false)
+    if (init == false)
     {
       init = true;
       previous_time = current_time;
@@ -175,17 +173,17 @@ private:
     Encoder delta = current_encoder - previous_encoder;
 
     Robot_Velocity delta_dot = robot_model(delta.left, delta.right);
-    
+
     // Calculate the deltas in x, y, and theta
-    double delta_x = delta_dot.linear*cos(current_position.theta) * delta_time;
-    double delta_y = delta_dot.linear*sin(current_position.theta) * delta_time;
+    double delta_x = delta_dot.linear * cos(current_position.theta) * delta_time;
+    double delta_y = delta_dot.linear * sin(current_position.theta) * delta_time;
     double delta_theta = delta_dot.omega * delta_time;
 
-       // Update the current position
+    // Update the current position
     current_position.x += delta_x;
     current_position.y += delta_y;
     current_position.theta += delta_theta;
- 
+
     odom_msg.header.stamp = this->now();
     odom_msg.header.frame_id = "odom";
     odom_msg.child_frame_id = "base_link";
@@ -199,9 +197,9 @@ private:
 
     odom_msg.twist.twist.linear.x = delta_dot.linear;
     odom_msg.twist.twist.linear.y = 0.0;
-    odom_msg.twist.twist.angular.z = delta_dot.omega; 
+    odom_msg.twist.twist.angular.z = delta_dot.omega;
     odom_publisher->publish(odom_msg);
-    previous_encoder = current_encoder;  
+    previous_encoder = current_encoder;
   }
 
   void read_serial()
@@ -219,7 +217,7 @@ private:
         return; // skip there is no comma
       }
 
-      if(comma_index == 0)
+      if (comma_index == 0)
       {
         return; // skip if the comma is the first character
       }
@@ -230,22 +228,39 @@ private:
       }
 
       // Split the buffer into two parts
-      char encoder_left_buffer[comma_index + 1]; // comma_index + 1];
+      char encoder_left_buffer[comma_index + 1];           // comma_index + 1];
       char encoder_right_buffer[bytes_read - comma_index]; // bytes_read - comma_index];
-      
+
       std::copy(buffer, buffer + comma_index, encoder_left_buffer);
       encoder_left_buffer[comma_index] = '\0';
 
       std::copy(buffer + comma_index + 1, buffer + bytes_read, encoder_right_buffer);
       encoder_right_buffer[bytes_read - comma_index] = '\0';
 
-      int32_t encoder_left = std::stoi(encoder_left_buffer);
-      int32_t encoder_right = std::stoi(encoder_right_buffer);
+      int32_t encoder_left = 0;
+      int32_t encoder_right = 0;
+      // Convert the strings to integers
+      try
+      {
+        encoder_left = std::stoi(encoder_left_buffer);
+        encoder_right = std::stoi(encoder_right_buffer);
+      }
+      catch (const std::invalid_argument &e)
+      {
+        RCLCPP_ERROR(this->get_logger(), "Invalid argument: %s", e.what());
+        return;
+      }
+      catch (const std::out_of_range &e)
+      {
+        RCLCPP_ERROR(this->get_logger(), "Out of range: %s", e.what());
+        return;
+      }
 
+      // Convert the strings to integers
       current_encoder.right = encoder_right;
       current_encoder.left = encoder_left;
 
-      if(init == false)
+      if (init == false)
       {
         initial_encoder = current_encoder;
       }
@@ -286,20 +301,20 @@ private:
 
   int serial_port;
 
-  double wheel_radius = 32.0 / 1000.0; // meters
-  double qpp_per_rad = 1500 / (2 * M_PI);        // qpp per revolution
-  double qpp_per_meter = wheel_radius/qpp_per_rad;
+  double wheel_radius = 32.0 / 1000.0;    // meters
+  double qpp_per_rad = 1500 / (2 * M_PI); // qpp per revolution
+  double qpp_per_meter = wheel_radius / qpp_per_rad;
 
   // Convert velocities into left and right motor speeds
   const double wheel_base = 0.150; // Distance between wheels (m)
   bool init = false;
-  Encoder initial_encoder = {0,0};
-  Encoder previous_encoder = {0,0};
-  Encoder current_encoder = {0,0};
-  Position current_position = {0,0,0};
-  Robot_Velocity current_velocity = {0,0};
+  Encoder initial_encoder = {0, 0};
+  Encoder previous_encoder = {0, 0};
+  Encoder current_encoder = {0, 0};
+  Position current_position = {0, 0, 0};
+  Robot_Velocity current_velocity = {0, 0};
   nav_msgs::msg::Odometry odom_msg;
-  
+
   int cycle_period_ms = 50; // milliseconds
   time_t previous_time = 0;
 };
