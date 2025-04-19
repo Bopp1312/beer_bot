@@ -1,0 +1,8 @@
+slam_toolbox:
+  ros__parameters:
+    odom_frame: odom
+    base_frame: base_link
+    map_frame: map
+    scan_topic: scan
+    use_sim_time: false
+    debug_logging: true

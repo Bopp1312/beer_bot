@@ -16,17 +16,28 @@ find_package(nav_msgs REQUIRED)
 
 add_executable(arduino_driver src/arduino_driver.cpp)
 add_executable(joy_to_twist src/joy_to_twist_node.cpp)
+add_executable(odom_to_tf src/odom_passthrough.cpp)
 
 ament_target_dependencies(arduino_driver rclcpp geometry_msgs tf2_ros nav_msgs)
 ament_target_dependencies(joy_to_twist rclcpp geometry_msgs sensor_msgs)
+ament_target_dependencies(odom_to_tf rclcpp tf2_ros nav_msgs)
 
 install(TARGETS 
         arduino_driver
         joy_to_twist
+        odom_to_tf
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(DIRECTORY urdf/
+  DESTINATION share/${PROJECT_NAME}/urdf
+)
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 ament_package()
