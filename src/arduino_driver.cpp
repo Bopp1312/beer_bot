@@ -17,6 +17,13 @@ struct Position
   double theta = 0;
 };
 
+struct Cartesian_Velocity
+{
+  double x = 0;
+  double y = 0;
+  double omega = 0;
+};
+
 struct Wheel_Velocity
 {
   double x = 0;
@@ -56,14 +63,23 @@ class ArduinoDriverNode : public rclcpp::Node
 public:
   ArduinoDriverNode() : Node("arduino_driver_node")
   {
+    // TF broadcaster
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
+    // Subscribe to /cmd_vel
     subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
-        "/cmd_vel", 10, std::bind(&ArduinoDriverNode::twist_callback, this, std::placeholders::_1));
-    odom_publisher = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
-    timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(cycle_period_ms), std::bind(&ArduinoDriverNode::send_serial, this));
+      "/cmd_vel", 10,
+      std::bind(&ArduinoDriverNode::twist_callback, this, std::placeholders::_1));
 
+    // Publisher for odometry
+    odom_publisher = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
+
+    // Timer for serial read/write
+    timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(cycle_period_ms),
+      std::bind(&ArduinoDriverNode::send_serial, this));
+
+    // Initialize serial port
     serial_port = open("/dev/ttyACM0", O_RDWR | O_NOCTTY);
     if (serial_port < 0)
     {
@@ -116,7 +132,7 @@ private:
   void twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
     latest_twist = *msg;
-  };
+  }
 
   void send_serial()
   {
@@ -126,14 +142,14 @@ private:
       return;
     }
 
-    double linear_velocity = latest_twist.linear.x;
+    double linear_velocity = -latest_twist.linear.x;
     double angular_velocity = latest_twist.angular.z;
 
     double left_speed = linear_velocity - (angular_velocity * wheel_base / 2.0);
     double right_speed = linear_velocity + (angular_velocity * wheel_base / 2.0);
 
-    int32_t left_motor_speed = static_cast<int32_t>(left_speed / wheel_radius * qpp_per_rad);
-    int32_t right_motor_speed = static_cast<int32_t>(right_speed / wheel_radius * qpp_per_rad * -1);
+    int32_t left_motor_speed = static_cast<int32_t>(left_speed * qp_per_meter);
+    int32_t right_motor_speed = static_cast<int32_t>(right_speed * qp_per_meter * -1);
 
     std::string command = construct_motor_command(left_motor_speed, right_motor_speed);
     write(serial_port, command.c_str(), command.size());
@@ -141,19 +157,20 @@ private:
     read_serial();
   }
 
-  Robot_Velocity robot_model(const int32_t &left_motor, const int32_t &right_motor)
+  Robot_Velocity robot_model(const int32_t &left_motor_counts, const int32_t &right_motor_counts)
   {
     Robot_Velocity vel;
-    int32_t angular = -(left_motor + right_motor);
-    int32_t linear_qp = (left_motor - right_motor) / 2.0;
-    vel.omega = angular / (wheel_base / 2.0) * qpp_per_meter * 2 * M_PI;
-    vel.linear = linear_qp * qpp_per_meter * 2 * 14;
+    double left_motor = left_motor_counts / qp_per_meter;
+    double right_motor = right_motor_counts / qp_per_meter;
+    vel.omega = -(left_motor + right_motor) / wheel_base;
+    vel.linear = (left_motor - right_motor) / 2.0;
     return vel;
   }
 
   void update_odom()
   {
-    time_t current_time = this->now().nanoseconds();
+    rclcpp::Time ros_time = this->now();
+    time_t current_time = ros_time.nanoseconds();
     double delta_time = (current_time - previous_time) / 1e9;
     if (delta_time <= 0) return;
     if (!initialized)
@@ -165,34 +182,28 @@ private:
 
     previous_time = current_time;
     Encoder delta = current_encoder - previous_encoder;
-    Robot_Velocity delta_dot = robot_model(delta.left, delta.right);
+    Robot_Velocity displacement = robot_model(delta.left, delta.right);
+    
+    double theta_mid = current_position.theta + displacement.omega / 2.0;
+    current_position.x += displacement.linear * cos(theta_mid);
+    current_position.y += displacement.linear * sin(theta_mid);
+    current_position.theta += displacement.omega;
 
-    double delta_x = delta_dot.linear * cos(current_position.theta) * delta_time;
-    double delta_y = delta_dot.linear * sin(current_position.theta) * delta_time;
-    double delta_theta = delta_dot.omega * delta_time;
-
-    current_position.x += delta_x;
-    current_position.y += delta_y;
-    current_position.theta += delta_theta;
-
-    odom_msg.header.stamp = this->now();
+    odom_msg.header.stamp = ros_time;
     odom_msg.header.frame_id = "odom";
     odom_msg.child_frame_id = "base_link";
     odom_msg.pose.pose.position.x = current_position.x;
     odom_msg.pose.pose.position.y = current_position.y;
     odom_msg.pose.pose.position.z = 0.0;
-    odom_msg.pose.pose.orientation.x = 0.0;
-    odom_msg.pose.pose.orientation.y = 0.0;
     odom_msg.pose.pose.orientation.z = sin(current_position.theta / 2.0);
     odom_msg.pose.pose.orientation.w = cos(current_position.theta / 2.0);
-    odom_msg.twist.twist.linear.x = delta_dot.linear;
-    odom_msg.twist.twist.linear.y = 0.0;
-    odom_msg.twist.twist.angular.z = delta_dot.omega;
+    odom_msg.twist.twist.linear.x = displacement.linear / delta_time;
+    odom_msg.twist.twist.angular.z = displacement.omega / delta_time;;
     odom_publisher->publish(odom_msg);
     previous_encoder = current_encoder;
 
     geometry_msgs::msg::TransformStamped tf_msg;
-    tf_msg.header.stamp = odom_msg.header.stamp;
+    tf_msg.header.stamp = ros_time;
     tf_msg.header.frame_id = "odom";
     tf_msg.child_frame_id = "base_link";
     tf_msg.transform.translation.x = current_position.x;
@@ -205,11 +216,11 @@ private:
   void read_serial()
   {
     char buffer[256];
-    ssize_t bytes_read = read(serial_port, buffer, sizeof(buffer) - 1);
+    const ssize_t bytes_read = read(serial_port, buffer, sizeof(buffer) - 1);
     if (bytes_read > 0)
     {
       buffer[bytes_read] = '\0';
-      int comma_index = find_index(',', buffer, bytes_read);
+      const int comma_index = find_index(',', buffer, bytes_read);
       if (comma_index <= 0 || comma_index >= bytes_read - 1) return;
 
       char encoder_left_buffer[comma_index + 1];
@@ -231,21 +242,17 @@ private:
       {
         initial_encoder = current_encoder;
       }
-      
       current_encoder = current_encoder - initial_encoder;
-
+      std::cout << "Left Encoder: " << current_encoder.left << ", Right Encoder: " << current_encoder.right << "\n";
       update_odom();
     }
   }
 
   int find_index(const char character, char *array, size_t size)
   {
-    for (size_t i = 0; i < size; i++)
+    for (size_t i = 0; i < size; ++i)
     {
-      if (array[i] == character)
-      {
-        return i;
-      }
+      if (array[i] == character) return i;
     }
     return -1;
   }
@@ -261,18 +268,17 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
   geometry_msgs::msg::Twist latest_twist;
   int serial_port;
-  double wheel_radius = 32.0 / 1000.0;
-  double qpp_per_rad = 1500 / (2 * M_PI);
-  double qpp_per_meter = wheel_radius / qpp_per_rad;
-  const double wheel_base = 0.150;
+  double wheel_radius = 32.0 / 1000.0; // M
+  double qp_per_rad = 1500 / (2 * M_PI); // Counts per radian
+  double qp_per_meter = 7364; // Calibrated value
+  const double wheel_base = 0.269; // Calibrated value
   bool initialized = false;
-  Encoder initial_encoder = {0, 0};
-  Encoder previous_encoder = {0, 0};
-  Encoder current_encoder = {0, 0};
-  Position current_position = {0, 0, 0};
-  Robot_Velocity current_velocity = {0, 0};
+  Encoder initial_encoder;
+  Encoder previous_encoder;
+  Encoder current_encoder;
+  Position current_position;
   nav_msgs::msg::Odometry odom_msg;
-  int cycle_period_ms = 50;
+  int cycle_period_ms = 20;
   time_t previous_time = 0;
 };
 

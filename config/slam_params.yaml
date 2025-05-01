@@ -1,8 +1,20 @@
 slam_toolbox:
   ros__parameters:
+    use_sim_time: false
+
+    # frame names
     odom_frame: odom
     base_frame: base_link
     map_frame: map
+
+    # topics
     scan_topic: scan
-    use_sim_time: false
-    debug_logging: true
+
+    # tuning
+    queue_size: 50
+    throttle_scans: 1
+    tf_buffer_duration: 30.0
+
+    # map settings
+    resolution: 0.03
+    map_update_interval: 5.0

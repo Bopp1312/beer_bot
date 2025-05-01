@@ -18,14 +18,20 @@ add_executable(arduino_driver src/arduino_driver.cpp)
 add_executable(joy_to_twist src/joy_to_twist_node.cpp)
 add_executable(odom_to_tf src/odom_passthrough.cpp)
 
-ament_target_dependencies(arduino_driver rclcpp geometry_msgs tf2_ros nav_msgs)
+add_executable(tftester src/tftester.cpp)
+
+ament_target_dependencies(arduino_driver rclcpp geometry_msgs tf2_ros sensor_msgs nav_msgs)
 ament_target_dependencies(joy_to_twist rclcpp geometry_msgs sensor_msgs)
 ament_target_dependencies(odom_to_tf rclcpp tf2_ros nav_msgs)
+ament_target_dependencies(tftester rclcpp tf2_ros geometry_msgs)
+
+
 
 install(TARGETS 
         arduino_driver
         joy_to_twist
         odom_to_tf
+        tftester
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch/

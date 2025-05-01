@@ -5,9 +5,14 @@ from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
-
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
+    slam_params_path = os.path.join(
+        get_package_share_directory('beer_bot'),
+        'config',
+        'slam_params.yaml'
+    )
     return LaunchDescription([
         # Joystick
         Node(
@@ -32,15 +37,6 @@ def generate_launch_description():
             name='joy_to_twist',
             output='screen'
         ),
-
-        # Odometry TF broadcaster
-        Node(
-            package='beer_bot',
-            executable='odom_to_tf',
-            name='odom_tf_broadcaster',
-            output='screen'
-        ),
-
         # URDF visualization (robot_state_publisher, etc.)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -51,7 +47,6 @@ def generate_launch_description():
                 ])
             )
         ),
-
         # LIDAR driver
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -62,20 +57,11 @@ def generate_launch_description():
                 ])
             )
         ),
-
-        # # SLAM Toolbox with delay to ensure TF is active
-        # TimerAction(
-        #     period=5.0,
-        #     actions=[
-        #         IncludeLaunchDescription(
-        #             PythonLaunchDescriptionSource(
-        #                 PathJoinSubstitution([
-        #                     FindPackageShare('beer_bot'),
-        #                     'launch',
-        #                     'online_slam.launch.py'
-        #                 ])
-        #             )
-        #         )
-        #     ]
-        # )
+        # Node(
+        #     package='slam_toolbox',
+        #     executable='async_slam_toolbox_node',
+        #     name='slam_toolbox',
+        #     output='screen',
+        #     parameters=[slam_params_path],  # <— load the YAML here
+        # ),
     ])
