@@ -9,7 +9,7 @@ then in a new terminal run
 `ros2 run slam_toolbox online_async_launch.py`
 now you can manually drive the robot around and collect mapping data which will be published on the /map topic 
 Finally when you are ready to save the map in a new terminal run:
-`ros2 run nav2_map_server map_saver_cli -f my_new_map
+`ros2 run nav2_map_server map_saver_cli -f my_new_map`
 
 ## Loading the map for localization
 
